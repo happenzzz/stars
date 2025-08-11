@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>밤하늘 별자리 플레이그라운드 — 나만의 별자리 표시 포함</title>
+<title>밤하늘 별자리 플레이그라운드 — 전체화면/사진저장 추가</title>
 <style>
   :root{
     --bg1:#050914; --bg2:#0a1733; --panel:#0e1b36cc; --ink:#eaf2ff; --sub:#a7b7d6;
@@ -13,11 +13,14 @@
   html,body{height:100%;margin:0;background:radial-gradient(1200px 700px at 60% 10%,var(--bg2),var(--bg1) 60%);}
   body{color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Inter,Noto Sans KR,sans-serif}
   header{display:flex;gap:.5rem;align-items:center;justify-content:space-between;padding:.8rem 1rem;background:#0b162dcc;border-bottom:1px solid #16284e}
-  .tabs{display:flex;gap:.5rem}
+  .tabs{display:flex;gap:.5rem;align-items:center}
   .tab{padding:.5rem .9rem;border:1px solid #28437a;border-radius:999px;background:#0e1d3a;color:#cfe2ff;cursor:pointer}
   .tab.active{background:#1a2c56;color:#fff;border-color:#31539a;box-shadow:0 0 0 2px #1a2c56 inset}
-  main{display:grid;grid-template-columns:1fr min(360px,30%);gap:10px;height:calc(100% - 64px);}
-  #stageWrap{position:relative;margin:8px;border:1px solid #1c2e59;border-radius:14px;overflow:hidden;box-shadow:0 10px 30px #00000055;min-height:420px}
+  .hdr-actions{display:flex;gap:.5rem;align-items:center}
+  .btn{padding:.45rem .8rem;border:1px solid #2a4178;border-radius:10px;background:#102042;color:#cfe2ff;cursor:pointer}
+  .btn.primary{background:#123066;border-color:#3a5aa6}
+  main{display:grid;grid-template-columns:1fr min(380px,32%);gap:10px;height:calc(100% - 64px);}
+  #stageWrap{position:relative;margin:8px;border:1px solid #1c2e59;border-radius:14px;overflow:hidden;box-shadow:0 10px 30px #00000055;min-height:420px;background:#071022}
   /* 겹친 캔버스 */
   #sky,#fx{position:absolute;inset:0;width:100%;height:100%;display:block}
   #fx{pointer-events:none}
@@ -25,10 +28,7 @@
   aside{display:flex;flex-direction:column;gap:10px;padding:10px}
   .card{background:var(--panel);border:1px solid #1e2f58;border-radius:16px;padding:12px}
   .card h3{margin:.2rem 0 .6rem;font-size:1rem}
-  .controls{display:flex;flex-wrap:wrap;gap:.4rem}
-  .controls .btn{padding:.35rem .7rem;border:1px solid #2a4178;border-radius:10px;background:#102042;color:#cfe2ff;cursor:pointer}
-  .controls .btn.primary{background:#123066;border-color:#3a5aa6}
-  .controls label{display:flex;align-items:center;gap:.4rem;padding:.25rem .4rem;border-radius:8px}
+  .controls{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}
   .row{display:flex;flex-wrap:wrap;gap:.4rem}
   .pill{padding:.2rem .6rem;border:1px solid #395693;border-radius:999px;cursor:pointer;background:#0f2347}
   .pill input{accent-color:#88aaf8}
@@ -50,7 +50,10 @@
     <button class="tab" data-tab="custom">나만의 별자리</button>
     <button class="tab" data-tab="quiz">퀴즈 모드</button>
   </div>
-  <div class="muted">나만의 별자리: 별을 클릭하면 <b>빛나고 번호</b>가 표시됩니다(다시 클릭 시 해제). 저장하면 화면에 계속 표시됩니다.</div>
+  <div class="hdr-actions">
+    <button class="btn" id="btnFullscreen">전체화면 보기</button>
+    <span class="muted">전체화면에서 별들이 천천히 오른쪽으로 이동합니다.</span>
+  </div>
 </header>
 
 <main>
@@ -89,6 +92,7 @@
       <div class="controls">
         <button class="btn primary" id="btnMake" disabled>만들기</button>
         <button class="btn" id="btnClearSel">선택 취소</button>
+        <button class="btn" id="btnPhoto" disabled>사진 저장(PNG)</button>
       </div>
       <div class="hint">선택한 별: <b id="selCount">0</b>개</div>
       <form id="myForm">
@@ -127,6 +131,8 @@ const fx  = document.getElementById('fx');
 const ctx = sky.getContext('2d');
 const ftx = fx.getContext('2d');
 const overlay = document.getElementById('overlay');
+const stageWrap = document.getElementById('stageWrap');
+const btnFullscreen = document.getElementById('btnFullscreen');
 
 /* ===== 별자리 데이터(겹치지 않게 배치) ===== */
 const W = 1200, H = 700;
@@ -168,15 +174,15 @@ const CONST = {
   }
 };
 
-/* ===== 상태/라벨/좌표 ===== */
+/* ===== 상태 ===== */
 const consMeta = {};
 const visible  = Object.fromEntries(Object.keys(CONST).map(k=>[k,true]));
 let showLines=true, showLabels=true, showPolaris=true;
 
-/* 나만의 별자리 저장소(정규화 좌표) */
+/* 저장된 나만의 별자리(정규화 좌표) */
 let savedCustoms = []; // {name, story, lines:[[{x:0..1,y:0..1},{x:0..1,y:0..1}]], label:{x:0..1,y:0..1}}
 
-/* 필터 UI */
+/* ===== 필터 UI ===== */
 const filters = document.getElementById('filters');
 function buildFilterUI(){
   filters.innerHTML='';
@@ -189,10 +195,9 @@ function buildFilterUI(){
   }
 }
 
-/* 라벨/좌표 갱신(나만의 라벨 포함) */
+/* ===== 라벨/좌표 맵 ===== */
 function mapConstellations(){
   overlay.innerHTML='';
-  // 기본 별자리 라벨
   for(const [name,data] of Object.entries(CONST)){
     consMeta[name] = {
       stars: data.stars.map((s,i)=>({id:`${name}:${i}`,x:s.x/W*sky.width,y:s.y/H*sky.height, polaris:!!s.polaris})),
@@ -200,7 +205,7 @@ function mapConstellations(){
       label: {x:data.label.x/W*sky.width, y:data.label.y/H*sky.height},
       story: data.story, key:data.key
     };
-    if(showLabels){
+    if(showLabels && !panActive){
       const div = document.createElement('div');
       div.textContent = name; div.className='label';
       div.style.left=(consMeta[name].label.x/sky.width*100)+'%';
@@ -208,20 +213,20 @@ function mapConstellations(){
       overlay.appendChild(div);
     }
   }
-  // 나만의 별자리 라벨
-  if(showLabels){
-    savedCustoms.forEach((c,i)=>{
+  if(!panActive){
+    // 나만의 라벨도 DOM으로
+    savedCustoms.forEach(c=>{
+      if(!showLabels) return;
       const div = document.createElement('div');
       div.textContent = c.name; div.className='label custom';
       div.style.left = (c.label.x*100)+'%';
       div.style.top  = (c.label.y*100)+'%';
-      div.dataset.custom = '1';
       overlay.appendChild(div);
     });
   }
 }
 
-/* 배경별 */
+/* ===== 배경별 ===== */
 let bgStars=[];
 function seedBackground(){
   bgStars = [];
@@ -231,9 +236,11 @@ function seedBackground(){
   }
 }
 
-/* 이펙트/루프 */
-let perf=0;
-let particles=[];
+/* ===== 이펙트/루프 & 전체화면 스크롤 ===== */
+let perf=0, particles=[];
+let panActive=false, scrollX=0, panSpeed=12; // px/sec (CSS 픽셀 기준)
+let lastT=0;
+
 function drawFX(){
   ftx.clearRect(0,0,fx.width,fx.height);
   particles.forEach(p=>{
@@ -252,117 +259,146 @@ function sparkle(consName){
   }
 }
 
-/* ==== 나만의 별자리 상태 ==== */
-let customSel=[];              // [{id,x,y}]
-let madeLines=null;            // [[{x,y},{x,y}], ...]
+/* ===== 나만의 별자리 상태 ===== */
+let customSel=[]; let madeLines=null;
 const selCountEl = document.getElementById('selCount');
 
-/* 유틸: 중심점 → 라벨 위치 */
-function centroid(points){
-  const set = new Map();
-  points.forEach(p=>set.set(p.x+'|'+p.y, p));
-  const arr=[...set.values()];
-  const sx = arr.reduce((a,p)=>a+p.x,0);
-  const sy = arr.reduce((a,p)=>a+p.y,0);
-  return {x: sx/arr.length, y: sy/arr.length};
-}
-
-/* 메인 그리기 */
+/* ===== 그리기(스크롤 지원) ===== */
 function draw(){
+  const o = panActive ? (scrollX % sky.width) : 0;
   ctx.clearRect(0,0,sky.width,sky.height);
   const g=ctx.createLinearGradient(0,0,0,sky.height);
   g.addColorStop(0,'#0a1733'); g.addColorStop(1,'#071022');
   ctx.fillStyle=g; ctx.fillRect(0,0,sky.width,sky.height);
 
-  // 배경별 깜빡임
+  // 배경별
   bgStars.forEach(st=>{
     const tw=(Math.sin(perf*0.002+st.a)+1)/2*st.tw + 0.4;
-    ctx.globalAlpha=tw; ctx.beginPath(); ctx.arc(st.x,st.y,st.r,0,Math.PI*2);
-    ctx.fillStyle='#e9f3ff'; ctx.fill();
+    ctx.globalAlpha=tw;
+    for(const k of [o, o - sky.width]){
+      const x = st.x + k;
+      if(x<-10 || x>sky.width+10) continue;
+      ctx.beginPath(); ctx.arc(x,st.y,st.r,0,Math.PI*2); ctx.fillStyle='#e9f3ff'; ctx.fill();
+    }
   });
   ctx.globalAlpha=1;
 
-  // 기본 별자리
+  // 기본 별자리(선/별)
   for(const [name,m] of Object.entries(consMeta)){
     if(!visible[name]) continue;
     if(showLines){
       ctx.strokeStyle='#89a7ff'; ctx.lineWidth=1.6*DPR;
-      ctx.beginPath();
-      m.lines.forEach(([a,b])=>{ ctx.moveTo(m.stars[a].x,m.stars[a].y); ctx.lineTo(m.stars[b].x,m.stars[b].y); });
-      ctx.stroke();
+      for(const k of [o, o - sky.width]){
+        ctx.beginPath();
+        m.lines.forEach(([a,b])=>{ ctx.moveTo(m.stars[a].x+k,m.stars[a].y); ctx.lineTo(m.stars[b].x+k,m.stars[b].y); });
+        ctx.stroke();
+      }
     }
     m.stars.forEach(s=>{
-      ctx.beginPath(); ctx.arc(s.x,s.y,2.2*DPR,0,Math.PI*2);
-      ctx.fillStyle = s.polaris && showPolaris ? '#ffd166' : '#ffffff';
-      ctx.fill();
-      if(s.polaris && showPolaris){
-        ctx.globalAlpha=.6; ctx.lineWidth=1*DPR; ctx.strokeStyle='#ffd166';
-        ctx.beginPath(); ctx.arc(s.x,s.y,6*DPR,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1;
+      for(const k of [o, o - sky.width]){
+        const x=s.x+k;
+        if(x<-10 || x>sky.width+10) continue;
+        ctx.beginPath(); ctx.arc(x,s.y,2.2*DPR,0,Math.PI*2);
+        ctx.fillStyle = s.polaris && showPolaris ? '#ffd166' : '#ffffff';
+        ctx.fill();
+        if(s.polaris && showPolaris){
+          ctx.globalAlpha=.6; ctx.lineWidth=1*DPR; ctx.strokeStyle='#ffd166';
+          ctx.beginPath(); ctx.arc(x,s.y,6*DPR,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1;
+        }
       }
     });
   }
 
-  // 나만의 별자리(저장된 것) — 항상 표시
-  if(savedCustoms.length){
-    savedCustoms.forEach(c=>{
-      ctx.save();
-      ctx.strokeStyle='#ffd166'; ctx.lineWidth=2*DPR;
+  // 저장된 나만의 별자리(항상 표시)
+  savedCustoms.forEach(c=>{
+    ctx.save(); ctx.strokeStyle='#ffd166'; ctx.lineWidth=2*DPR;
+    for(const k of [o, o - sky.width]){
       ctx.beginPath();
       c.lines.forEach(([a,b])=>{
-        ctx.moveTo(a.x*sky.width, a.y*sky.height);
-        ctx.lineTo(b.x*sky.width, b.y*sky.height);
+        ctx.moveTo(a.x*sky.width+k, a.y*sky.height);
+        ctx.lineTo(b.x*sky.width+k, b.y*sky.height);
       });
       ctx.stroke();
-      ctx.restore();
-      // 점 표시(중복 제거)
-      const uniq = new Map();
-      c.lines.forEach(([a,b])=>{
-        uniq.set(a.x+'|'+a.y, a);
-        uniq.set(b.x+'|'+b.y, b);
-      });
+      // 점
+      const uniq=new Map();
+      c.lines.forEach(([a,b])=>{ uniq.set(a.x+'|'+a.y,a); uniq.set(b.x+'|'+b.y,b); });
       uniq.forEach(p=>{
-        ctx.beginPath(); ctx.arc(p.x*sky.width, p.y*sky.height, 2.8*DPR, 0, Math.PI*2);
-        ctx.fillStyle='#ffe8a6'; ctx.fill();
+        const px=p.x*sky.width+k, py=p.y*sky.height;
+        if(px<-10 || px>sky.width+10) return;
+        ctx.beginPath(); ctx.arc(px,py,2.8*DPR,0,Math.PI*2); ctx.fillStyle='#ffe8a6'; ctx.fill();
       });
-    });
-  }
+    }
+    ctx.restore();
+  });
 
-  // 나만의 별자리: 현재 선택 강조
-  if(customSel.length){
-    customSel.forEach((s,idx)=>{
-      ctx.save();
-      ctx.shadowColor='#ffd166'; ctx.shadowBlur=18;
-      ctx.fillStyle='#ffffff';
-      ctx.beginPath(); ctx.arc(s.x, s.y, 3.4*DPR, 0, Math.PI*2); ctx.fill();
-      ctx.restore();
-      ctx.strokeStyle='#ffd166'; ctx.lineWidth=2*DPR;
-      ctx.beginPath(); ctx.arc(s.x, s.y, 8*DPR, 0, Math.PI*2); ctx.stroke();
-      ctx.save(); ctx.fillStyle='#ffd166'; ctx.font=`${12*DPR}px system-ui, sans-serif`;
-      ctx.textAlign='center'; ctx.textBaseline='bottom';
-      ctx.fillText(String(idx+1), s.x, s.y-10*DPR); ctx.restore();
-    });
-  }
+  // 현재 선택 강조
+  customSel.forEach((s,idx)=>{
+    for(const k of [o, o - sky.width]){
+      const x=s.x+k; if(x<-10 || x>sky.width+10) continue;
+      ctx.save(); ctx.shadowColor='#ffd166'; ctx.shadowBlur=18; ctx.fillStyle='#ffffff';
+      ctx.beginPath(); ctx.arc(x, s.y, 3.4*DPR, 0, Math.PI*2); ctx.fill(); ctx.restore();
+      ctx.strokeStyle='#ffd166'; ctx.lineWidth=2*DPR; ctx.beginPath(); ctx.arc(x,s.y,8*DPR,0,Math.PI*2); ctx.stroke();
+      ctx.save(); ctx.fillStyle='#ffd166'; ctx.font=`${12*DPR}px system-ui, sans-serif`; ctx.textAlign='center'; ctx.textBaseline='bottom';
+      ctx.fillText(String(idx+1), x, s.y-10*DPR); ctx.restore();
+    }
+  });
 
-  // 만들기 이후 점선 프리뷰
+  // 만들기 프리뷰(점선)
   if(madeLines && madeLines.length){
-    ctx.save();
-    ctx.strokeStyle='#ffd166'; ctx.lineWidth=1.6*DPR; ctx.setLineDash([6,5]);
-    ctx.beginPath();
-    for(const [a,b] of madeLines){ ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); }
-    ctx.stroke();
+    ctx.save(); ctx.strokeStyle='#ffd166'; ctx.lineWidth=1.6*DPR; ctx.setLineDash([6,5]);
+    for(const k of [o, o - sky.width]){
+      ctx.beginPath();
+      for(const [a,b] of madeLines){ ctx.moveTo(a.x+k,a.y); ctx.lineTo(b.x+k,b.y); }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // 전체화면(스크롤 중)에는 라벨을 캔버스에 직접 그리기
+  if(panActive){
+    if(showLabels){
+      // 기본 라벨
+      ctx.save(); ctx.fillStyle='#dbe8ff'; ctx.font=`${12*DPR}px system-ui, sans-serif`;
+      for(const [name,m] of Object.entries(consMeta)){
+        for(const k of [o, o - sky.width]){
+          const x=m.label.x+k, y=m.label.y;
+          if(x<-10 || x>sky.width+10) continue;
+          ctx.fillText(name, x, y);
+        }
+      }
+      ctx.restore();
+    }
+    // 나만의 라벨(항상)
+    ctx.save(); ctx.fillStyle='#ffe8a6'; ctx.font=`${12*DPR}px system-ui, sans-serif`;
+    savedCustoms.forEach(c=>{
+      for(const k of [o, o - sky.width]){
+        const x=c.label.x*sky.width+k, y=c.label.y*sky.height;
+        if(x<-10 || x>sky.width+10) continue;
+        ctx.fillText(c.name, x, y);
+      }
+    });
     ctx.restore();
   }
 }
 
-/* 루프 */
-function loop(t){ perf=t||0; draw(); drawFX(); requestAnimationFrame(loop); }
+function loop(t){
+  const now = t||0;
+  const dt = lastT ? (now-lastT)/1000 : 0;
+  lastT = now;
+  if(panActive){
+    scrollX = (scrollX + panSpeed*dt*DPR) % sky.width;
+    overlay.style.display = 'none'; // 전체화면 중에는 캔버스에 라벨 직접 그림
+  } else {
+    overlay.style.display = showLabels ? 'block' : 'none';
+  }
+  perf=now; draw(); drawFX(); requestAnimationFrame(loop);
+}
 
-/* ===== 상호작용: 기본 별자리 정보(탐색 모드) ===== */
+/* ===== 인터랙션(탐색 모드) ===== */
 const infoName = document.getElementById('selName');
 const infoStory = document.getElementById('selStory');
 function segDist(x,y,x1,y1,x2,y2){
-  const A=x-x1, B=y-y1, C=x2-x1, D=y2-y1;
-  const dot=A*C+B*D, len=C*C+D*D; let t=len?(dot/len):-1; t=Math.max(0,Math.min(1,t));
+  const A=x-x1, B=y-y1, C=x2-x1, D=y2-y1; const dot=A*C+B*D, len=C*C+D*D; let t=len?(dot/len):-1; t=Math.max(0,Math.min(1,t));
   const nx=x1+t*C, ny=y1+t*D; return Math.hypot(x-nx,y-ny);
 }
 function pickConstellationAt(clientX, clientY){
@@ -387,49 +423,36 @@ function pickConstellationAt(clientX, clientY){
 
 /* ===== 별 선택(나만의 모드) ===== */
 function nearestStarPix(px,py){
-  const R = 26*DPR; // 허용 반경
-  let best = R, hit = null;
-
-  // 배경별
-  for(const s of bgStars){
-    const d=Math.hypot(px-s.x,py-s.y);
-    if(d<best){best=d; hit={id:s.id,x:s.x,y:s.y};}
-  }
-  // 별자리의 별(보이는 것만)
+  const R=26*DPR; let best=R, hit=null;
+  for(const s of bgStars){ const d=Math.hypot(px-s.x,py-s.y); if(d<best){best=d; hit={id:s.id,x:s.x,y:s.y};} }
   for(const [name,m] of Object.entries(consMeta)){
     if(!visible[name]) continue;
-    for(const s of m.stars){
-      const d=Math.hypot(px-s.x,py-s.y);
-      if(d<best){best=d; hit={id:s.id,x:s.x,y:s.y};}
-    }
+    for(const s of m.stars){ const d=Math.hypot(px-s.x,py-s.y); if(d<best){best=d; hit={id:s.id,x:s.x,y:s.y};} }
   }
-  return hit; // 없으면 null
+  return hit;
 }
-
 function toggleSelectAt(e){
   const rect=sky.getBoundingClientRect();
   const x=(e.clientX-rect.left)*DPR, y=(e.clientY-rect.top)*DPR;
-  const hit = nearestStarPix(x,y);
-  if(!hit) return;
-
-  const idx = customSel.findIndex(p=>p.id===hit.id);
+  const hit=nearestStarPix(x,y); if(!hit) return;
+  const idx=customSel.findIndex(p=>p.id===hit.id);
   if(idx>=0){ customSel.splice(idx,1); } else { customSel.push(hit); }
-  selCountEl.textContent = customSel.length;
+  selCountEl.textContent=customSel.length;
   document.getElementById('btnMake').disabled = customSel.length<3;
 }
 
-/* 클릭 분기 */
+/* ===== 클릭 분기 ===== */
 let activeTab='explore';
 sky.addEventListener('click', e=>{
   if(activeTab==='explore'){
     const name=pickConstellationAt(e.clientX,e.clientY);
     if(name){ infoName.textContent=name; infoStory.textContent=consMeta[name].story; sparkle(name); }
   } else if(activeTab==='custom'){
-    toggleSelectAt(e); // 선택 토글
+    toggleSelectAt(e);
   }
 });
 
-/* 탭 */
+/* ===== 탭 ===== */
 document.querySelectorAll('.tab').forEach(btn=>{
   btn.onclick=()=>{
     document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
@@ -441,58 +464,93 @@ document.querySelectorAll('.tab').forEach(btn=>{
   };
 });
 
-/* 나만의 별자리 버튼들 */
+/* ===== 나만의 별자리 버튼 ===== */
 const btnMake   = document.getElementById('btnMake');
 const btnClear  = document.getElementById('btnClearSel');
 const myNameEl  = document.getElementById('myName');
 const myStoryEl = document.getElementById('myStory');
 const btnSave   = document.getElementById('btnSave');
+const btnPhoto  = document.getElementById('btnPhoto');
 const myList    = document.getElementById('myList');
 
-btnClear.onclick=()=>{
-  customSel=[]; madeLines=null; selCountEl.textContent='0'; btnMake.disabled=true; myNameEl.disabled=true; myStoryEl.disabled=true; btnSave.disabled=true;
-};
+function centroid(points){
+  const set=new Map(); points.forEach(p=>set.set(p.x+'|'+p.y,p));
+  const arr=[...set.values()]; const sx=arr.reduce((a,p)=>a+p.x,0), sy=arr.reduce((a,p)=>a+p.y,0);
+  return {x:sx/arr.length, y:sy/arr.length};
+}
+btnClear.onclick=()=>{ customSel=[]; madeLines=null; selCountEl.textContent='0'; btnMake.disabled=true; myNameEl.disabled=true; myStoryEl.disabled=true; btnSave.disabled=true; };
 btnMake.onclick=()=>{
   if(customSel.length<3) return;
-  // 선택 순서대로 점선 연결 프리뷰
-  madeLines=[];
-  for(let i=0;i<customSel.length-1;i++){ madeLines.push([customSel[i], customSel[i+1]]); }
+  madeLines=[]; for(let i=0;i<customSel.length-1;i++){ madeLines.push([customSel[i], customSel[i+1]]); }
   myNameEl.disabled=false; myStoryEl.disabled=false; btnSave.disabled=false;
 };
 btnSave.onclick=()=>{
-  const name  = myNameEl.value.trim()||'이름 없는 별자리';
-  const story = myStoryEl.value.trim()||'(설명이 없습니다)';
-
-  if(!madeLines || !madeLines.length){ return; }
-
-  // 저장: 정규화 좌표로 변환
-  const linesNorm = madeLines.map(([a,b])=>[
-    {x:a.x/sky.width, y:a.y/sky.height},
-    {x:b.x/sky.width, y:b.y/sky.height}
-  ]);
-  // 라벨 위치(중심점)
-  const allPts = madeLines.flatMap(pair=>pair);
-  const cen = centroid(allPts);
-  const labelNorm = {x: cen.x/sky.width, y: cen.y/sky.height};
-
-  savedCustoms.push({name, story, lines: linesNorm, label: labelNorm});
-
-  // 목록에도 추가
+  const name=myNameEl.value.trim()||'이름 없는 별자리';
+  const story=myStoryEl.value.trim()||'(설명이 없습니다)';
+  if(!madeLines||!madeLines.length) return;
+  // 저장
+  const linesNorm = madeLines.map(([a,b])=>[{x:a.x/sky.width,y:a.y/sky.height},{x:b.x/sky.width,y:b.y/sky.height}]);
+  const cen = centroid(madeLines.flatMap(p=>p));
+  const labelNorm = {x:cen.x/sky.width, y:cen.y/sky.height};
+  savedCustoms.push({name, story, lines:linesNorm, label:labelNorm});
+  // 목록
   const div=document.createElement('div');
   div.innerHTML=`<b>${name}</b><br><span class="muted">${story}</span><hr style="border:0;border-top:1px solid #213861">`;
   myList.prepend(div);
-
-  // 라벨 새로 그림 + 화면 갱신
-  mapConstellations();
-  draw();
-
+  // 라벨/버튼 갱신
+  mapConstellations(); draw();
+  btnPhoto.disabled = savedCustoms.length===0 ? true : false;
   // 초기화
   myNameEl.value=''; myStoryEl.value='';
   myNameEl.disabled=true; myStoryEl.disabled=true; btnSave.disabled=true;
   customSel=[]; madeLines=null; selCountEl.textContent='0'; btnMake.disabled=true;
 };
 
-/* 퀴즈 */
+/* ===== 사진 저장(PNG) ===== */
+btnPhoto.onclick = ()=>{
+  // 현재 sky를 복제해 라벨을 캔버스에 그려서 저장
+  const canvas = document.createElement('canvas');
+  canvas.width = sky.width; canvas.height = sky.height;
+  const cctx = canvas.getContext('2d');
+  cctx.drawImage(sky,0,0);
+  // 비전체화면 상태에서는 DOM 라벨이 캔버스에 없으니 캔버스로 그려줌
+  if(!panActive){
+    if(showLabels){
+      // 기본 라벨
+      cctx.fillStyle='#dbe8ff'; cctx.font=`${12*DPR}px system-ui, sans-serif`; cctx.textAlign='center'; cctx.textBaseline='alphabetic';
+      for(const [name,m] of Object.entries(consMeta)){
+        cctx.fillText(name, m.label.x, m.label.y);
+      }
+    }
+    // 나만의 라벨(항상)
+    cctx.fillStyle='#ffe8a6'; cctx.font=`${12*DPR}px system-ui, sans-serif`; cctx.textAlign='center'; cctx.textBaseline='alphabetic';
+    savedCustoms.forEach(c=>{ cctx.fillText(c.name, c.label.x*sky.width, c.label.y*sky.height); });
+  }
+  const url = canvas.toDataURL('image/png');
+  const a = document.createElement('a');
+  a.href = url; a.download = `my_constellation_${Date.now()}.png`;
+  document.body.appendChild(a); a.click(); a.remove();
+};
+
+/* ===== 전체화면 보기 ===== */
+btnFullscreen.onclick = async ()=>{
+  try{
+    if(!document.fullscreenElement){
+      await stageWrap.requestFullscreen();
+      panActive = true; // 시작과 동시에 스크롤
+      overlay.style.display='none'; // 라벨은 캔버스에서 그림
+    }else{
+      await document.exitFullscreen();
+    }
+  }catch(err){ console.error(err); }
+};
+document.addEventListener('fullscreenchange', ()=>{
+  if(!document.fullscreenElement){
+    panActive=false; overlay.style.display = showLabels ? 'block' : 'none';
+  }
+});
+
+/* ===== 퀴즈 ===== */
 const QUIZ_BANK=[
   {q:"‘W’ 모양으로 유명한 별자리는?", c:["카시오페이아자리","세페우스자리","용자리","기린자리"], a:0},
   {q:"북극성이 속한 별자리는?", c:["작은곰자리","큰곰자리","세페우스자리","카시오페이아자리"], a:0},
@@ -508,32 +566,20 @@ const btnStart=document.getElementById('btnStart');
 const btnNext=document.getElementById('btnNext');
 const quizMsg=document.getElementById('quizMsg');
 
-btnStart.onclick=()=>{
-  quiz=[...QUIZ_BANK].sort(()=>Math.random()-0.5).slice(0,5);
-  qi=0; score=0; btnStart.style.display='none'; btnNext.style.display='inline-block';
-  quizMsg.textContent='문제를 읽고 정답을 고르세요.'; showQ();
-};
+btnStart.onclick=()=>{ quiz=[...QUIZ_BANK].sort(()=>Math.random()-0.5).slice(0,5); qi=0; score=0; btnStart.style.display='none'; btnNext.style.display='inline-block'; quizMsg.textContent='문제를 읽고 정답을 고르세요.'; showQ(); };
 btnNext.onclick=()=>{ if(qi<quiz.length) showQ(); else endQuiz(); };
 function showQ(){
   const item=quiz[qi++]; qDiv.textContent=`Q${qi}. ${item.q}`; choiceDiv.innerHTML='';
-  item.c.forEach((txt,idx)=>{
-    const b=document.createElement('button'); b.textContent=txt;
-    b.onclick=()=>{
-      const ok=idx===item.a; quizMsg.textContent= ok? "정답! ⭐":"아쉬워요. 정답은 「"+item.c[item.a]+"」";
-      if(ok) score++; if(qi===quiz.length){ btnNext.textContent='결과 보기'; } else { btnNext.textContent='다음'; }
-    };
+  item.c.forEach((txt,idx)=>{ const b=document.createElement('button'); b.textContent=txt;
+    b.onclick=()=>{ const ok=idx===item.a; quizMsg.textContent= ok? "정답! ⭐":"아쉬워요. 정답은 「"+item.c[item.a]+"」"; if(ok) score++; if(qi===quiz.length){ btnNext.textContent='결과 보기'; } else { btnNext.textContent='다음'; } };
     choiceDiv.appendChild(b);
   });
 }
-function endQuiz(){
-  qDiv.textContent=`종료! 점수: ${score} / ${quiz.length}`; choiceDiv.innerHTML='';
-  btnNext.style.display='none'; btnStart.style.display='inline-block'; btnStart.textContent='다시 시작';
-  quizMsg.textContent='훌륭해요! 별자리 모양과 이름을 다시 한 번 확인해 보세요.';
-}
+function endQuiz(){ qDiv.textContent=`종료! 점수: ${score} / ${quiz.length}`; choiceDiv.innerHTML=''; btnNext.style.display='none'; btnStart.style.display='inline-block'; btnStart.textContent='다시 시작'; quizMsg.textContent='훌륭해요! 별자리 모양과 이름을 다시 한 번 확인해 보세요.'; }
 
-/* 리사이즈 */
+/* ===== 리사이즈 ===== */
 function fitCanvas(){
-  const rect = document.getElementById('stageWrap').getBoundingClientRect();
+  const rect = stageWrap.getBoundingClientRect();
   [sky,fx].forEach(c=>{
     c.width  = Math.round(rect.width  * DPR);
     c.height = Math.round(rect.height * DPR);
@@ -546,7 +592,7 @@ function fitCanvas(){
 }
 window.addEventListener('resize', fitCanvas, {passive:true});
 
-/* 시작 */
+/* ===== 스위치 & 초기화 ===== */
 document.getElementById('showLines').onchange=e=>{showLines=e.target.checked; draw();}
 document.getElementById('showLabels').onchange=e=>{showLabels=e.target.checked; mapConstellations(); draw();}
 document.getElementById('showPolaris').onchange=e=>{showPolaris=e.target.checked; draw();}
@@ -558,6 +604,7 @@ fitCanvas();
 requestAnimationFrame(loop);
 document.getElementById('selName').textContent='선택한 별자리 없음';
 document.getElementById('selStory').textContent='';
+document.getElementById('btnPhoto').disabled = savedCustoms.length===0;
 </script>
 </body>
 </html>
